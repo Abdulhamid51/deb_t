@@ -1,10 +1,12 @@
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from .models import *
 from .serializers import *
+from .permissions import IsAuthorOrReadOnly
 
 class LoginAPIView(APIView):
     def post(self, request):
@@ -15,32 +17,32 @@ class LoginAPIView(APIView):
             key = Token.objects.get(user=user)
             return Response({"key":key.__str__()})
         else:
-            return Response({"error":"username or password incorrect"})
+            return Response({"error":True})
 
 class RegisterAPIView(APIView):
     def post(self, request):
         username = request.data['username']
         password = request.data['password']
-        user = User.objects.create_user(username=username, password=password)
-        key = Token.objects.create(user=user)
-        return Response({"key":key.__str__()})
+        try:
+            user = User.objects.create_user(username=username, password=password)
+            key = Token.objects.create(user=user)
+            return Response({"key":key.__str__()})
+        except:
+            return Response({"error":True})
 
 
-class ClientsList(APIView):
-    permission_classes = [IsAuthenticated]
-    def get(self, request):
-        query_set = Client.objects.filter(owner=request.user)
-        serializer = ClientSerializer(query_set, many=True)
-        return Response(serializer.data)
+class ClientsListCreate(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated, IsAuthorOrReadOnly]
+    queryset = Client.objects.all()
+    serializer_class = ClientSerializer
 
-    def post(self, request):
-        request.data.update({"owner":request.user.id})
-        serializer = ClientSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        else:
-            return Response({"error":"data is not valid"})
+    def get_queryset(self):
+        res = super().get_queryset()
+        user = self.request.user
+        return res.filter(owner=user)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
 
 class ClientDetail(APIView):
@@ -56,21 +58,13 @@ class ClientDetail(APIView):
             })
 
 
-class ClientUpdateDelete(APIView):
-    permission_classes = [IsAuthenticated]
-    def put(self, request, id):
-        client = Client.objects.get(id=id)
-        serializer = ClientSerializer(client, data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        else:
-            return Response({"error":"data is not valid"})
+class ClientUpdateDelete(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated, IsAuthorOrReadOnly]
+    queryset = Client.objects.all()
+    serializer_class = ClientSerializer
 
-    def delete(self, request, id):
-        client = Client.objects.get(id=id)
-        client.delete()
-        return Response({"success":"deleted"})
+    def perform_update(self, serializer):
+        serializer.save(owner=self.request.user)
 
 
 class DebtCreateUpdateDelete(APIView):
@@ -88,7 +82,7 @@ class DebtCreateUpdateDelete(APIView):
         else:
             return Response({"error":"data is not valid"})
     
-    def put(self, request, id):
+    def patch(self, request, id):
         debt = Debt.objects.get(id=id)
         client_id = request.data['client']
         client = Client.objects.get(id=client_id)

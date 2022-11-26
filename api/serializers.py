@@ -9,7 +9,7 @@ class ClientSerializer(serializers.ModelSerializer):
 
 
 class DebtSerializer(serializers.ModelSerializer):
-    # client = ClientSerializer(many=False)
+    
     class Meta:
         model = Debt
         fields = '__all__'
